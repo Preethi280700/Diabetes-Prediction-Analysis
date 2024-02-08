@@ -1,0 +1,227 @@
+
+knitr::opts_chunk$set(echo = TRUE)
+library(ggExtra)
+library(ggplot2)
+library(car)
+library(carData)
+library(emmeans)
+pacman::p_load(ROCR, pROC)
+library(faraway)
+library(MASS)
+library(rpart.plot)
+
+
+library(caret)
+library(psych)
+library(vip)
+library(randomForest)
+
+
+#importing the data from workspace
+
+diabetes <- read.csv("diabetes.csv")
+head(diabetes)
+summary(diabetes)
+
+pairs(Outcome ~., data = diabetes)
+
+cor_data <- diabetes[,1:8]
+corPlot(cor_data, cex = 1.2)
+
+# library(corrplot)
+# corrplot(cor(cor_data), method = "number",
+#          title = "method = 'number'",
+#          tl.pos = "n", mar = c(2, 1, 3, 1))
+
+diabetes$Outcome <- ifelse(diabetes$Outcome == 1, "Positive", "Negative")
+diabetes$Outcome <- factor(diabetes$Outcome)
+
+
+model_1 <- glm(Outcome ~ ., data = diabetes, family = "binomial")
+summary(model_1)
+
+
+diabetes$Outcome <- as.factor(diabetes$Outcome)
+# Create a new column to hold the factor values
+#0-1(0-18 years teen age and below), 19-40(Young Age), 41-60(middle age), 60-85(Old #Age)
+diabetes$Age <- cut(diabetes$Age, 
+                    breaks=c(21, 40, 60, 85), 
+                    labels=c("young Age","Middle Age","Elder & Wise"), 
+                    include.lowest=TRUE)
+
+# diabetes$B <- cut(diabetes$BMI, 
+#                           breaks=c(0,18.5, 25, 30, 50), 
+#                           labels=c("Underweight","Normal Weight",
+#                                    "Over Weight","Obesity"), 
+#                           include.lowest=TRUE)
+
+# Performing AIC test and getting summary statistics to remove unwanted predictors
+
+summary(diabetes)
+head(diabetes)
+round(vif(model_1),2)
+model_2 <- step(model_1) 
+model_2
+
+
+
+fit_1 <- glm(Outcome ~ Pregnancies + Glucose + BloodPressure + BMI + 
+               DiabetesPedigreeFunction + Age, data = diabetes, family = "binomial")
+summary(fit_1)
+vif(fit_1)
+
+new_dataset <- diabetes
+head(new_dataset)
+
+fit_2 <- glm(Outcome ~ Pregnancies + Glucose + BloodPressure + BMI + 
+               DiabetesPedigreeFunction + Age + Pregnancies:Age, data = diabetes, family = "binomial")
+summary(fit_2)
+
+
+pairs(Outcome ~ Pregnancies + Glucose + BloodPressure+ BMI + DiabetesPedigreeFunction + Age,
+      data = diabetes)
+
+
+**Now We run the train test split** for the data to see how the model performs for the data
+
+set.seed(123)
+
+# Create train-test split with 70-30 ratio
+train_index <- createDataPartition(diabetes$Outcome, p = 0.7, list = FALSE)
+train_data <- diabetes[train_index, ]
+test_data <- diabetes[-train_index, ]
+
+# Fit logistic regression model on training data
+T_T_S_model <- glm(Outcome ~ Pregnancies + Glucose + BloodPressure+
+                     BMI + DiabetesPedigreeFunction + Age + Pregnancies:Age, 
+                   data = train_data, family = binomial)
+# Predict on training data 
+predictions <- predict(T_T_S_model, newdata = train_data, type = "response")
+predicted_classes_train <- ifelse(predictions > 0.5, 1, 0)
+
+# Predict on test data
+predictions <- predict(T_T_S_model, newdata = test_data, type = "response")
+predicted_classes_test <- ifelse(predictions > 0.5, 1, 0)
+
+# Create confusion matrix for bot training data and testing data 
+confusion_matrix_train <- table(train_data$Outcome, predicted_classes_train)
+confusion_matrix<- table(test_data$Outcome, predicted_classes_test)
+confusion_matrix_train
+confusion_matrix
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+accuracy
+# Calculate true positives, true negatives, false positives, false negatives
+tp <- confusion_matrix[2, 2]
+tn <- confusion_matrix[1, 1]
+fp <- confusion_matrix[1, 2]
+fn <- confusion_matrix[2, 1]
+
+# Calculate sensitivity and specificity
+sensitivity <- tp / (tp + fn)
+specificity <- tn / (tn + fp)
+
+# Print results
+cat("Sensitivity:", sensitivity, "\n")
+cat("Specificity:", specificity, "\n")
+
+predictions <- predict(T_T_S_model, newdata = test_data, type = "response")
+roc_obj <- roc(test_data$Outcome, predictions)
+plot(roc_obj, print.auc = TRUE, main = "ROC Curve for Diabetes Prediction", 
+     col = "blue", diag.col = "yellow")
+
+
+#Load necessary packages
+library(pROC)
+
+# Predict probabilities on test data
+predictions <- predict(T_T_S_model, newdata = test_data, type = "response")
+
+# Create ROC curve object to create a 
+roc_obj <- roc(test_data$Outcome, predictions)
+
+vip(T_T_S_model)
+
+model_interact <- glm(Outcome ~ Pregnancies
+                      + Glucose + BMI+BloodPressure + DiabetesPedigreeFunction
+                      +Age + Pregnancies:Age
+                      , data = diabetes, 
+                      family = "binomial")
+summary(model_interact)
+
+
+ggplot(diabetes)+
+  geom_bar(aes(x=Pregnancies, fill=Age ),position="dodge")+
+  facet_wrap(~Outcome)
+
+ggplot(diabetes, aes(x =Insulin , y = Glucose, color = Outcome))+
+  geom_point()
+
+ggplot(diabetes, aes(x =BMI , y = BloodPressure, color = Outcome))+
+  geom_point()
+
+
+library(dplyr)
+diabetes<-diabetes %>% 
+  mutate(Outcome = factor(Outcome,labels = c("Negative","Positive")))
+
+
+
+**Final Model**
+  
+  The final model to predict trump winning can be written as
+
+$$\hat{p}(X_1,X_2,X_3,X_4,X_5,X_6,X_7)
+=$$
+  $$\frac{e^{( -8.00 + 0.155*Pregnancies + 0.034*Glucose -0.012*BloodPressure +0.084*BMI + 0.870*DiabetesPedigreeFunction + 1.057*Age1 + 1.6831*Age2 - 0.075*Pregnancies*Age1 - 0.548*Pregnancies*Age2)}}{1+e^{( -8.00 + 0.155*Pregnancies + 0.034*Glucose -0.012*BloodPressure +0.084*BMI + 0.870*DiabetesPedigreeFunction + 1.057*Age1 + 1.6831*Age2 - 0.075*Pregnancies*Age1 - 0.548*Pregnancies*Age2)}}$$
+  ```{r}
+#  Creating a random forest model to test the parameters with full and reduced model
+
+set.seed(123)
+# Train a random forest model
+rfModel <- randomForest(Outcome ~ ., data = train_data, ntree = 500, mtry = 3, importance = TRUE)
+
+# Predict the outcome of the test data using the trained model
+rfPred <- predict(rfModel, test_data)
+confusionMatrix(rfPred, test_data$Outcome)
+
+
+set.seed(151)
+# Train a random forest model
+rfModel <- randomForest(Outcome ~ Pregnancies + Glucose + BloodPressure+
+                          BMI + DiabetesPedigreeFunction + Age+Pregnancies:Age, data = train_data, ntree = 500, mtry = 3, importance = TRUE)
+
+# Predict the outcome of the test data using the trained model
+rfPred <- predict(rfModel, test_data)
+confusionMatrix(rfPred, test_data$Outcome)
+
+
+library(xgboost)
+set.seed(123)
+# Load the dataset
+diabetes <- read.csv("diabetes.csv")
+
+# Split the dataset into training and testing sets
+set.seed(123)
+train_indices <- sample(1:nrow(diabetes), 0.7*nrow(diabetes))
+train_data <- diabetes[train_indices,]
+test_data <- diabetes[-train_indices,]
+
+# Define the input and output variables
+x_train <- data.matrix(train_data[,1:8])
+y_train <- train_data[,9]
+x_test <- data.matrix(test_data[,1:8])
+y_test <- test_data[,9]
+
+# Train the XGBoost model
+xgb_model <- xgboost(data = x_train, label = y_train, objective = "binary:logistic", nrounds = 1000, early_stopping_rounds = 10, verbose = 0)
+
+# Make predictions on the test set
+y_pred <- predict(xgb_model, x_test)
+y_pred <- ifelse(y_pred > 0.5, 1, 0)
+
+# Calculate the accuracy
+accuracy <- sum(y_pred == y_test)/length(y_test)
+print(paste("Accuracy:", accuracy))
+
+
+
